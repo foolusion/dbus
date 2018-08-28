@@ -146,7 +146,7 @@ func DecodeMessage(rd io.Reader) (msg *Message, err error) {
 	dec.pos = 1
 
 	msg = new(Message)
-	vs, err := dec.Decode(Signature{"yyyuu"})
+	vs, err := dec.Decode("yyyuu")
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func DecodeMessage(rd io.Reader) (msg *Message, err error) {
 	}
 	dec = newDecoder(io.MultiReader(bytes.NewBuffer(b), rd), order)
 	dec.pos = 12
-	vs, err = dec.Decode(Signature{"a(yv)"})
+	vs, err = dec.Decode("a(yv)")
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func DecodeMessage(rd io.Reader) (msg *Message, err error) {
 		return nil, err
 	}
 	sig, _ := msg.Headers[FieldSignature].value.(Signature)
-	if sig.str != "" {
+	if sig != "" {
 		buf := bytes.NewBuffer(body)
 		dec = newDecoder(buf, order)
 		vs, err := dec.Decode(sig)
@@ -223,30 +223,28 @@ func (msg *Message) EncodeTo(out io.Writer, order binary.ByteOrder) error {
 	default:
 		return errors.New("dbus: invalid byte order")
 	}
-	body := new(bytes.Buffer)
-	enc := newEncoder(body, order)
+	body := newEncoder(order)
 	if len(msg.Body) != 0 {
-		enc.Encode(msg.Body...)
+		body.Encode(msg.Body...)
 	}
 	vs[1] = msg.Type
 	vs[2] = msg.Flags
 	vs[3] = protoVersion
-	vs[4] = uint32(len(body.Bytes()))
+	vs[4] = uint32(body.Len())
 	vs[5] = msg.serial
 	headers := make([]header, 0, len(msg.Headers))
 	for k, v := range msg.Headers {
 		headers = append(headers, header{byte(k), v})
 	}
 	vs[6] = headers
-	var buf bytes.Buffer
-	enc = newEncoder(&buf, order)
+	enc := newEncoder(order)
 	enc.Encode(vs[:]...)
 	enc.align(8)
-	body.WriteTo(&buf)
-	if buf.Len() > 1<<27 {
+	body.WriteTo(enc)
+	if enc.Len() > 1<<27 {
 		return InvalidMessageError("message is too long")
 	}
-	if _, err := buf.WriteTo(out); err != nil {
+	if _, err := enc.WriteTo(out); err != nil {
 		return err
 	}
 	return nil

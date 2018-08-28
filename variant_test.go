@@ -10,7 +10,7 @@ var variantFormatTests = []struct {
 	{int32(1), `1`},
 	{"foo", `"foo"`},
 	{ObjectPath("/org/foo"), `@o "/org/foo"`},
-	{Signature{"i"}, `@g "i"`},
+	{"i"}, `@g "i"`,
 	{[]byte{}, `@ay []`},
 	{[]int32{1, 2}, `[1, 2]`},
 	{[]int64{1, 2}, `@ax [1, 2]`},
@@ -66,7 +66,7 @@ var variantParseTests = []struct {
 
 func TestParseVariant(t *testing.T) {
 	for i, v := range variantParseTests {
-		nv, err := ParseVariant(v.s, Signature{})
+		nv, err := ParseVariant(v.s)
 		if err != nil {
 			t.Errorf("test %d: parsing failed: %s", i+1, err)
 			continue

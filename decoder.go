@@ -51,9 +51,9 @@ func (dec *decoder) Decode(sig Signature) (vs []interface{}, err error) {
 		}
 	}()
 	vs = make([]interface{}, 0)
-	s := sig.str
+	s := sig
 	for s != "" {
-		err, rem := validSingle(s, 0)
+		rem, err := validSingle(s, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -64,7 +64,7 @@ func (dec *decoder) Decode(sig Signature) (vs []interface{}, err error) {
 	return vs, nil
 }
 
-func (dec *decoder) decode(s string, depth int) interface{} {
+func (dec *decoder) decode(s Signature, depth int) interface{} {
 	dec.align(alignment(typeFor(s)))
 	switch s[0] {
 	case 'y':
@@ -147,10 +147,10 @@ func (dec *decoder) decode(s string, depth int) interface{} {
 		}
 		var variant Variant
 		sig := dec.decode("g", depth).(Signature)
-		if len(sig.str) == 0 {
+		if len(sig) == 0 {
 			panic(FormatError("variant signature is empty"))
 		}
-		err, rem := validSingle(sig.str, 0)
+		err, rem := validSingle(string(sig), 0)
 		if err != nil {
 			panic(err)
 		}
@@ -158,7 +158,7 @@ func (dec *decoder) decode(s string, depth int) interface{} {
 			panic(FormatError("variant signature has multiple types"))
 		}
 		variant.sig = sig
-		variant.value = dec.decode(sig.str, depth+1)
+		variant.value = dec.decode(string(sig), depth+1)
 		return variant
 	case 'h':
 		return UnixFDIndex(dec.decode("u", depth).(uint32))

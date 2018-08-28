@@ -10,31 +10,31 @@ var sigTests = []struct {
 }{
 	{
 		[]interface{}{new(int32)},
-		Signature{"i"},
+		"i",
 	},
 	{
 		[]interface{}{new(string)},
-		Signature{"s"},
+		"s",
 	},
 	{
 		[]interface{}{new(Signature)},
-		Signature{"g"},
+		"g",
 	},
 	{
 		[]interface{}{new([]int16)},
-		Signature{"an"},
+		"an",
 	},
 	{
 		[]interface{}{new(int16), new(uint32)},
-		Signature{"nu"},
+		"nu",
 	},
 	{
 		[]interface{}{new(map[byte]Variant)},
-		Signature{"a{yv}"},
+		"a{yv}",
 	},
 	{
 		[]interface{}{new(Variant), new([]map[int32]string)},
-		Signature{"vaa{is}"},
+		"vaa{is}",
 	},
 }
 

@@ -120,13 +120,13 @@ func (s sigSet) Single() (Signature, bool) {
 			return k, true
 		}
 	}
-	return Signature{}, false
+	return "", false
 }
 
 func (s sigSet) ToArray() sigSet {
 	r := make(sigSet, len(s))
 	for k := range s {
-		r[Signature{"a" + k.str}] = true
+		r["a"+k.str] = true
 	}
 	return r
 }
@@ -138,21 +138,21 @@ type numNode struct {
 }
 
 var numSigSet = sigSet{
-	Signature{"y"}: true,
-	Signature{"n"}: true,
-	Signature{"q"}: true,
-	Signature{"i"}: true,
-	Signature{"u"}: true,
-	Signature{"x"}: true,
-	Signature{"t"}: true,
-	Signature{"d"}: true,
+	"y": true,
+	"n": true,
+	"q": true,
+	"i": true,
+	"u": true,
+	"x": true,
+	"t": true,
+	"d": true,
 }
 
 func (n numNode) Infer() (Signature, error) {
 	if strings.ContainsAny(n.str, ".e") {
-		return Signature{"d"}, nil
+		return "d", nil
 	}
-	return Signature{"i"}, nil
+	return "i", nil
 }
 
 func (n numNode) String() string {
@@ -164,7 +164,7 @@ func (n numNode) Sigs() sigSet {
 		return sigSet{n.sig: true}
 	}
 	if strings.ContainsAny(n.str, ".e") {
-		return sigSet{Signature{"d"}: true}
+		return sigSet{"d": true}
 	}
 	return numSigSet
 }
@@ -265,13 +265,13 @@ type stringNode struct {
 }
 
 var stringSigSet = sigSet{
-	Signature{"s"}: true,
-	Signature{"g"}: true,
-	Signature{"o"}: true,
+	"s": true,
+	"g": true,
+	"o": true,
 }
 
 func (n stringNode) Infer() (Signature, error) {
-	return Signature{"s"}, nil
+	return "s", nil
 }
 
 func (n stringNode) String() string {
@@ -294,7 +294,7 @@ func (n stringNode) Value(sig Signature) (interface{}, error) {
 	}
 	switch {
 	case sig.str == "g":
-		return Signature{n.str}, nil
+		return n.str, nil
 	case sig.str == "o":
 		return ObjectPath(n.str), nil
 	case sig.str == "s":
@@ -321,7 +321,7 @@ func varMakeStringNode(tok varToken, sig Signature) (varNode, error) {
 	case "o":
 		n.val = ObjectPath(s)
 	case "g":
-		n.val = Signature{s}
+		n.val = s
 	case "s":
 		n.val = s
 	}
@@ -388,12 +388,12 @@ func varParseString(s string) (string, error) {
 	return buf.String(), nil
 }
 
-var boolSigSet = sigSet{Signature{"b"}: true}
+var boolSigSet = sigSet{"b": true}
 
 type boolNode bool
 
 func (boolNode) Infer() (Signature, error) {
-	return Signature{"b"}, nil
+	return "b", nil
 }
 
 func (b boolNode) String() string {
@@ -426,9 +426,9 @@ func (n arrayNode) Infer() (Signature, error) {
 		if err != nil {
 			continue
 		}
-		return Signature{"a" + csig.str}, nil
+		return "a" + csig.str, nil
 	}
-	return Signature{}, fmt.Errorf("can't infer type for %q", n.String())
+	return "", fmt.Errorf("can't infer type for %q", n.String())
 }
 
 func (n arrayNode) String() string {
@@ -456,7 +456,7 @@ func (n arrayNode) Value(sig Signature) (interface{}, error) {
 	}
 	s := reflect.MakeSlice(typeFor(sig.str), len(n.children), len(n.children))
 	for i, v := range n.children {
-		rv, err := v.Value(Signature{sig.str[1:]})
+		rv, err := v.Value(sig.str[1:])
 		if err != nil {
 			return nil, err
 		}
@@ -522,11 +522,11 @@ type variantNode struct {
 }
 
 var variantSet = sigSet{
-	Signature{"v"}: true,
+	"v": true,
 }
 
 func (variantNode) Infer() (Signature, error) {
-	return Signature{"v"}, nil
+	return "v", nil
 }
 
 func (n variantNode) String() string {
@@ -587,9 +587,9 @@ func (n dictNode) Infer() (Signature, error) {
 		if err != nil {
 			continue
 		}
-		return Signature{"a{" + ksig.str + vsig.str + "}"}, nil
+		return "a{" + ksig + vsig + "}", nil
 	}
-	return Signature{}, fmt.Errorf("can't infer type for %q", n.String())
+	return "", fmt.Errorf("can't infer type for %q", n.String())
 }
 
 func (n dictNode) String() string {
@@ -608,7 +608,7 @@ func (n dictNode) Sigs() sigSet {
 	for k := range n.kset {
 		for v := range n.vset {
 			sig := "a{" + k.str + v.str + "}"
-			r[Signature{sig}] = true
+			r[sig] = true
 		}
 	}
 	return r
@@ -624,8 +624,8 @@ func (n dictNode) Value(sig Signature) (interface{}, error) {
 		return nil, varTypeError{n.String(), sig}
 	}
 	m := reflect.MakeMap(typeFor(sig.str))
-	ksig := Signature{sig.str[2:3]}
-	vsig := Signature{sig.str[3 : len(sig.str)-1]}
+	ksig := sig.str[2:3]
+	vsig := sig.str[3 : len(sig.str)-1]
 	for _, v := range n.children {
 		kv, err := v.key.Value(ksig)
 		if err != nil {
@@ -647,8 +647,8 @@ func varMakeDictNode(p *varParser, sig Signature) (varNode, error) {
 		if len(sig.str) < 5 {
 			return nil, fmt.Errorf("invalid signature %q for dict type", sig)
 		}
-		ksig := Signature{string(sig.str[2])}
-		vsig := Signature{sig.str[3 : len(sig.str)-1]}
+		ksig := string(sig.str[2])
+		vsig := sig.str[3 : len(sig.str)-1]
 		n.kset = sigSet{ksig: true}
 		n.vset = sigSet{vsig: true}
 	}
@@ -734,11 +734,11 @@ Loop:
 type byteStringNode []byte
 
 var byteStringSet = sigSet{
-	Signature{"ay"}: true,
+	"ay": true,
 }
 
 func (byteStringNode) Infer() (Signature, error) {
-	return Signature{"ay"}, nil
+	return "ay", nil
 }
 
 func (b byteStringNode) String() string {

@@ -45,7 +45,7 @@ var protoTests = []struct {
 		[]byte{3, 0, 0, 0, 'f', 'o', 'o', 0},
 	},
 	{
-		[]interface{}{Signature{"ai"}},
+		[]interface{}{"ai"},
 		[]byte{2, 'a', 'i', 0},
 		[]byte{2, 'a', 'i', 0},
 	},
@@ -60,7 +60,7 @@ var protoTests = []struct {
 		[]byte{1, 's', 0, 0, 3, 0, 0, 0, 'f', 'o', 'o', 0},
 	},
 	{
-		[]interface{}{MakeVariant(MakeVariant(Signature{"v"}))},
+		[]interface{}{MakeVariant(MakeVariant(Signature("v")))},
 		[]byte{1, 'v', 0, 1, 'g', 0, 1, 'v', 0},
 		[]byte{1, 'v', 0, 1, 'g', 0, 1, 'v', 0},
 	},
@@ -137,7 +137,7 @@ func TestProtoMap(t *testing.T) {
 	enc := newEncoder(buf, binary.LittleEndian)
 	enc.Encode(m)
 	dec := newDecoder(buf, binary.LittleEndian)
-	vs, err := dec.Decode(Signature{"a{sy}"})
+	vs, err := dec.Decode("a{sy"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestProtoVariantStruct(t *testing.T) {
 	enc := newEncoder(buf, binary.LittleEndian)
 	enc.Encode(v)
 	dec := newDecoder(buf, binary.LittleEndian)
-	vs, err := dec.Decode(Signature{"v"})
+	vs, err := dec.Decode("v")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestProtoStructTag(t *testing.T) {
 	enc := newEncoder(buf, binary.LittleEndian)
 	enc.Encode(bar1)
 	dec := newDecoder(buf, binary.LittleEndian)
-	vs, err := dec.Decode(Signature{"(ii)"})
+	vs, err := dec.Decode("(ii)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestMessage(t *testing.T) {
 
 func TestProtoStructInterfaces(t *testing.T) {
 	b := []byte{42}
-	vs, err := newDecoder(bytes.NewReader(b), binary.LittleEndian).Decode(Signature{"(y)"})
+	vs, err := newDecoder(bytes.NewReader(b), binary.LittleEndian).Decode("(y)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ var bigMessage = &Message{
 		FieldPath:        MakeVariant(ObjectPath("/org/freedesktop/Notifications")),
 		FieldInterface:   MakeVariant("org.freedesktop.Notifications"),
 		FieldMember:      MakeVariant("Notify"),
-		FieldSignature:   MakeVariant(Signature{"susssasa{sv}i"}),
+		FieldSignature:   MakeVariant("susssasa{svi"}),
 	},
 	Body: []interface{}{
 		"app_name",

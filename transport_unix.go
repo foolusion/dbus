@@ -109,7 +109,7 @@ func (t *unixTransport) ReadMessage() (*Message, error) {
 	}
 	dec := newDecoder(bytes.NewBuffer(headerdata), order)
 	dec.pos = 12
-	vs, err := dec.Decode(Signature{"a(yv)"})
+	vs, err := dec.Decode("a(yv)")
 	if err != nil {
 		return nil, err
 	}

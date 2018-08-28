@@ -1,4 +1,4 @@
-package dbus
+package dbus // import "github.com/godbus/dbus"
 
 import (
 	"fmt"
@@ -25,28 +25,26 @@ var sigToType = map[byte]reflect.Type{
 
 // Signature represents a correct type signature as specified by the D-Bus
 // specification. The zero value represents the empty signature, "".
-type Signature struct {
-	str string
-}
+type Signature string
 
 // SignatureOf returns the concatenation of all the signatures of the given
 // values. It panics if one of them is not representable in D-Bus.
 func SignatureOf(vs ...interface{}) Signature {
-	var s string
+	var s Signature
 	for _, v := range vs {
 		s += getSignature(reflect.TypeOf(v))
 	}
-	return Signature{s}
+	return s
 }
 
 // SignatureOfType returns the signature of the given type. It panics if the
 // type is not representable in D-Bus.
 func SignatureOfType(t reflect.Type) Signature {
-	return Signature{getSignature(t)}
+	return getSignature(t)
 }
 
 // getSignature returns the signature of the given type and panics on unknown types.
-func getSignature(t reflect.Type) string {
+func getSignature(t reflect.Type) Signature {
 	// handle simple types first
 	switch t.Kind() {
 	case reflect.Uint8:
@@ -86,7 +84,7 @@ func getSignature(t reflect.Type) string {
 		} else if t == signatureType {
 			return "g"
 		}
-		var s string
+		var s Signature
 		for i := 0; i < t.NumField(); i++ {
 			field := t.Field(i)
 			if field.PkgPath == "" && field.Tag.Get("dbus") != "-" {
@@ -109,19 +107,19 @@ func getSignature(t reflect.Type) string {
 
 // ParseSignature returns the signature represented by this string, or a
 // SignatureError if the string is not a valid signature.
-func ParseSignature(s string) (sig Signature, err error) {
+func ParseSignature(s Signature) (sig Signature, err error) {
 	if len(s) == 0 {
 		return
 	}
 	if len(s) > 255 {
-		return Signature{""}, SignatureError{s, "too long"}
+		return "", SignatureError{string(s), "too long"}
 	}
-	sig.str = s
+	sig = s
 	for err == nil && len(s) != 0 {
-		err, s = validSingle(s, 0)
+		s, err = validSingle(s, 0)
 	}
 	if err != nil {
-		sig = Signature{""}
+		sig = ""
 	}
 
 	return
@@ -129,7 +127,7 @@ func ParseSignature(s string) (sig Signature, err error) {
 
 // ParseSignatureMust behaves like ParseSignature, except that it panics if s
 // is not valid.
-func ParseSignatureMust(s string) Signature {
+func ParseSignatureMust(s Signature) Signature {
 	sig, err := ParseSignature(s)
 	if err != nil {
 		panic(err)
@@ -139,18 +137,18 @@ func ParseSignatureMust(s string) Signature {
 
 // Empty retruns whether the signature is the empty signature.
 func (s Signature) Empty() bool {
-	return s.str == ""
+	return s == ""
 }
 
 // Single returns whether the signature represents a single, complete type.
 func (s Signature) Single() bool {
-	err, r := validSingle(s.str, 0)
+	r, err := validSingle(s, 0)
 	return err != nil && r == ""
 }
 
 // String returns the signature's string representation.
 func (s Signature) String() string {
-	return s.str
+	return string(s)
 }
 
 // A SignatureError indicates that a signature passed to a function or received
@@ -168,57 +166,57 @@ func (e SignatureError) Error() string {
 // and rem is the remaining unparsed part. Otherwise, err is a non-nil
 // SignatureError and rem is "". depth is the current recursion depth which may
 // not be greater than 64 and should be given as 0 on the first call.
-func validSingle(s string, depth int) (err error, rem string) {
+func validSingle(s Signature, depth int) (rem Signature, err error) {
 	if s == "" {
-		return SignatureError{Sig: s, Reason: "empty signature"}, ""
+		return "", SignatureError{Sig: string(s), Reason: "empty signature"}
 	}
 	if depth > 64 {
-		return SignatureError{Sig: s, Reason: "container nesting too deep"}, ""
+		return "", SignatureError{Sig: string(s), Reason: "container nesting too deep"}
 	}
 	switch s[0] {
 	case 'y', 'b', 'n', 'q', 'i', 'u', 'x', 't', 'd', 's', 'g', 'o', 'v', 'h':
-		return nil, s[1:]
+		return s[1:], nil
 	case 'a':
 		if len(s) > 1 && s[1] == '{' {
 			i := findMatching(s[1:], '{', '}')
 			if i == -1 {
-				return SignatureError{Sig: s, Reason: "unmatched '{'"}, ""
+				return "", SignatureError{Sig: string(s), Reason: "unmatched '{'"}
 			}
 			i++
 			rem = s[i+1:]
 			s = s[2:i]
-			if err, _ = validSingle(s[:1], depth+1); err != nil {
-				return err, ""
+			if _, err = validSingle(s[:1], depth+1); err != nil {
+				return "", err
 			}
-			err, nr := validSingle(s[1:], depth+1)
+			nr, err := validSingle(s[1:], depth+1)
 			if err != nil {
-				return err, ""
+				return "", err
 			}
 			if nr != "" {
-				return SignatureError{Sig: s, Reason: "too many types in dict"}, ""
+				return "", SignatureError{Sig: string(s), Reason: "too many types in dict"}
 			}
-			return nil, rem
+			return rem, nil
 		}
 		return validSingle(s[1:], depth+1)
 	case '(':
 		i := findMatching(s, '(', ')')
 		if i == -1 {
-			return SignatureError{Sig: s, Reason: "unmatched ')'"}, ""
+			return "", SignatureError{Sig: string(s), Reason: "unmatched ')'"}
 		}
 		rem = s[i+1:]
 		s = s[1:i]
 		for err == nil && s != "" {
-			err, s = validSingle(s, depth+1)
+			s, err = validSingle(s, depth+1)
 		}
 		if err != nil {
 			rem = ""
 		}
 		return
 	}
-	return SignatureError{Sig: s, Reason: "invalid type character"}, ""
+	return "", SignatureError{Sig: string(s), Reason: "invalid type character"}
 }
 
-func findMatching(s string, left, right rune) int {
+func findMatching(s Signature, left, right rune) int {
 	n := 0
 	for i, v := range s {
 		if v == left {
@@ -235,8 +233,8 @@ func findMatching(s string, left, right rune) int {
 
 // typeFor returns the type of the given signature. It ignores any left over
 // characters and panics if s doesn't start with a valid type signature.
-func typeFor(s string) (t reflect.Type) {
-	err, _ := validSingle(s, 0)
+func typeFor(s Signature) (t reflect.Type) {
+	_, err := validSingle(s, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -247,7 +245,7 @@ func typeFor(s string) (t reflect.Type) {
 	switch s[0] {
 	case 'a':
 		if s[1] == '{' {
-			i := strings.LastIndex(s, "}")
+			i := strings.LastIndex(string(s), "}")
 			t = reflect.MapOf(sigToType[s[2]], typeFor(s[3:i]))
 		} else {
 			t = reflect.SliceOf(typeFor(s[1:]))
