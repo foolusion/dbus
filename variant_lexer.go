@@ -169,7 +169,7 @@ func varLexNormal(l *varLexer) lexState {
 	}
 }
 
-var varTypeMap = map[string]string{
+var varTypeMap = map[string]Signature{
 	"boolean":    "b",
 	"byte":       "y",
 	"int16":      "n",
@@ -269,7 +269,7 @@ func varLexType(l *varLexer) lexState {
 		}
 	}
 	if at {
-		if _, err := ParseSignature(l.input[l.start+1 : l.pos]); err != nil {
+		if _, err := ParseSignature(Signature(l.input[l.start+1 : l.pos])); err != nil {
 			return l.errorf("%s", err)
 		}
 	} else {

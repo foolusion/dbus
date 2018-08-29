@@ -26,31 +26,21 @@ func TestDecodeArrayEmptyStruct(t *testing.T) {
 		Flags: 0x00,
 		Headers: map[HeaderField]Variant{
 			0x06: Variant{
-				sig: Signature{
-					str: "s",
-				},
+				sig:   "s",
 				value: ":1.391",
 			},
 			0x05: Variant{
-				sig: Signature{
-					str: "u",
-				},
+				sig:   "u",
 				value: uint32(2),
 			},
 			0x08: Variant{
-				sig: Signature{
-					str: "g",
-				},
-				value: Signature{
-					str: "v",
-				},
+				sig:   "g",
+				value: "v",
 			},
 		},
 		Body: []interface{}{
 			Variant{
-				sig: Signature{
-					str: "(sa(iiay)ss)",
-				},
+				sig: "(sa(iiay)ss)",
 				value: property{
 					IconName:    "iconname",
 					Pixmaps:     []pixmap{},

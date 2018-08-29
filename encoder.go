@@ -4,16 +4,32 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"math"
 	"reflect"
+	"sync"
 )
+
+// Marshall encodes the values into dbus wire format.
+func Marshall(vs ...interface{}) ([]byte, error) {
+	e := newEncoder()
+	if err := e.encode(vs...); err != nil {
+		return nil, err
+	}
+	buf := append([]byte(nil), e.Bytes()...)
+	encoderPool.Put(e)
+	return buf, nil
+}
+
+var encoderPool sync.Pool
 
 // An encoder encodes values to the D-Bus wire format.
 type encoder struct {
 	bytes.Buffer
 }
 
-// NewEncoder returns a new encoder that writes to out in the given byte order.
-func newEncoder(order binary.ByteOrder) *encoder {
+// NewEncoder returns a new encoder that writes to out in the given
+// byte order.
+func newEncoder() *encoder {
 	return newEncoderAtOffset(0)
 }
 
@@ -21,8 +37,15 @@ func newEncoder(order binary.ByteOrder) *encoder {
 // byte order. Specify the offset to initialize pos for proper alignment
 // computation.
 func newEncoderAtOffset(offset int) *encoder {
-	enc := new(encoder)
-	return enc
+	var e *encoder
+	if v := encoderPool.Get(); v != nil {
+		e = v.(*encoder)
+		e.Buffer.Reset()
+	} else {
+		e = new(encoder)
+	}
+	e.Write(make([]byte, offset))
+	return e
 }
 
 // align writes padding to the encode buffer up to the next n byte
@@ -43,8 +66,8 @@ func (enc *encoder) align(n int) {
 	}
 }
 
-// pad returns the number of bytes of padding, based on current position and additional offset.
-// and alignment.
+// pad returns the number of bytes of padding, based on current
+// position and additional offset.  and alignment.
 func (enc *encoder) padding(offset, algn int) int {
 	abs := enc.Len() + offset
 	if abs%algn != 0 {
@@ -61,16 +84,16 @@ func (enc *encoder) binwrite(v interface{}) {
 	}
 }
 
-// Encode encodes the given values to the underyling reader. All written values
-// are aligned properly as required by the D-Bus spec.
-func (enc *encoder) Encode(vs ...interface{}) (err error) {
+// Encode encodes the given values to the underyling reader. All
+// written values are aligned properly as required by the D-Bus spec.
+func (enc *encoder) encode(vs ...interface{}) (err error) {
 	defer func() {
 		err, _ = recover().(error)
 	}()
 	for _, v := range vs {
 		val := reflect.ValueOf(v)
 		enc.align(alignment(val.Type()))
-		f := enc.encode(val.Type(), 0)
+		f := getEncoder(val.Type(), 0)
 		f(enc, val)
 	}
 	return nil
@@ -78,9 +101,9 @@ func (enc *encoder) Encode(vs ...interface{}) (err error) {
 
 type encodeFn func(*encoder, reflect.Value) error
 
-// encode encodes the given value to the writer and panics on error. depth holds
-// the depth of the container nesting.
-func (enc *encoder) encode(t reflect.Type, depth int) encodeFn {
+// encode encodes the given value to the writer and panics on
+// error. depth holds the depth of the container nesting.
+func getEncoder(t reflect.Type, depth int) encodeFn {
 	switch t.Kind() {
 	case reflect.Uint8:
 		return encodeByte
@@ -94,14 +117,11 @@ func (enc *encoder) encode(t reflect.Type, depth int) encodeFn {
 	case reflect.String:
 		return getStringEncoder(t)
 	case reflect.Ptr:
-		enc.encode(t.Elem(), depth)
+		return getEncoder(t.Elem(), depth)
 	case reflect.Slice, reflect.Array:
 		return encodeSlice
 	case reflect.Struct:
 		return getStructEncoder(t)
-		if depth >= 64 && t != signatureType {
-			panic(FormatError("input exceeds container depth limit"))
-		}
 	case reflect.Map:
 		return encodeMap
 	}
@@ -141,9 +161,12 @@ func encodeInt(enc *encoder, v reflect.Value) error {
 	return err
 }
 
-// FIXME: implement this.
 func encodeFloat(enc *encoder, v reflect.Value) error {
-	return nil
+	bits := math.Float64bits(v.Float())
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, bits)
+	_, err := enc.Write(buf)
+	return err
 }
 
 func getStringEncoder(t reflect.Type) encodeFn {
@@ -160,7 +183,7 @@ func encodeSignature(enc *encoder, v reflect.Value) error {
 }
 
 func encodeString(enc *encoder, v reflect.Value) error {
-	if err := enc.Encode(uint32(v.Len())); err != nil {
+	if err := enc.encode(uint32(v.Len())); err != nil {
 		return err
 	}
 	return encodeStringData(enc, v)
@@ -178,11 +201,11 @@ func encodeStringData(enc *encoder, v reflect.Value) error {
 
 func encodeSlice(enc *encoder, v reflect.Value) error {
 	var temp encoder
-	f := temp.encode(v.Type().Elem(), 0)
+	f := getEncoder(v.Type().Elem(), 0)
 	for i := 0; i < v.Len(); i++ {
 		f(enc, v.Index(i))
 	}
-	enc.Encode(uint32(temp.Len()))
+	enc.encode(uint32(temp.Len()))
 	enc.align(alignment(v.Type().Elem()))
 	_, err := enc.Write(temp.Bytes())
 	if err != nil {
@@ -203,7 +226,7 @@ func getStructEncoder(t reflect.Type) encodeFn {
 
 func encodeStruct(enc *encoder, v reflect.Value) error {
 	for i := 0; i < v.NumField(); i++ {
-		if err := enc.Encode(v.Field(i)); err != nil {
+		if err := enc.encode(v.Field(i)); err != nil {
 			return err
 		}
 	}
@@ -213,8 +236,8 @@ func encodeStruct(enc *encoder, v reflect.Value) error {
 // FIXME: implement this
 func encodeVariant(enc *encoder, v reflect.Value) error {
 	variant := v.Interface().(Variant)
-	enc.Encode(variant.sig)
-	enc.Encode(variant.value)
+	enc.encode(variant.sig)
+	enc.encode(variant.value)
 	return nil
 }
 

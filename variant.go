@@ -35,7 +35,7 @@ func ParseVariant(s string, sig Signature) (Variant, error) {
 	if err != nil {
 		return Variant{}, err
 	}
-	if sig.str == "" {
+	if sig == "" {
 		sig, err = varInfer(n)
 		if err != nil {
 			return Variant{}, err
@@ -51,7 +51,7 @@ func ParseVariant(s string, sig Signature) (Variant, error) {
 // format returns a formatted version of v and whether this string can be parsed
 // unambigously.
 func (v Variant) format() (string, bool) {
-	switch v.sig.str[0] {
+	switch v.sig[0] {
 	case 'b', 'i':
 		return fmt.Sprint(v.value), true
 	case 'n', 'q', 'u', 'x', 't', 'd', 'h':
@@ -61,11 +61,11 @@ func (v Variant) format() (string, bool) {
 	case 'o':
 		return strconv.Quote(string(v.value.(ObjectPath))), false
 	case 'g':
-		return strconv.Quote(v.value.(Signature).str), false
+		return strconv.Quote(v.value.(string)), false
 	case 'v':
 		s, unamb := v.value.(Variant).format()
 		if !unamb {
-			return "<@" + v.value.(Variant).sig.str + " " + s + ">", true
+			return "<@" + string(v.value.(Variant).sig) + " " + s + ">", true
 		}
 		return "<" + s + ">", true
 	case 'y':
@@ -133,7 +133,7 @@ func (v Variant) Signature() Signature {
 func (v Variant) String() string {
 	s, unamb := v.format()
 	if !unamb {
-		return "@" + v.sig.str + " " + s
+		return "@" + string(v.sig) + " " + s
 	}
 	return s
 }

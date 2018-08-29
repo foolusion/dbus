@@ -136,7 +136,7 @@ func (dec *decoder) decode(s Signature, depth int) interface{} {
 			panic(err)
 		}
 		dec.pos += int(length) + 1
-		sig, err := ParseSignature(string(b[:len(b)-1]))
+		sig, err := ParseSignature(Signature((b[:len(b)-1])))
 		if err != nil {
 			panic(err)
 		}
@@ -150,7 +150,7 @@ func (dec *decoder) decode(s Signature, depth int) interface{} {
 		if len(sig) == 0 {
 			panic(FormatError("variant signature is empty"))
 		}
-		err, rem := validSingle(string(sig), 0)
+		rem, err := validSingle(sig, 0)
 		if err != nil {
 			panic(err)
 		}
@@ -158,7 +158,7 @@ func (dec *decoder) decode(s Signature, depth int) interface{} {
 			panic(FormatError("variant signature has multiple types"))
 		}
 		variant.sig = sig
-		variant.value = dec.decode(string(sig), depth+1)
+		variant.value = dec.decode(sig, depth+1)
 		return variant
 	case 'h':
 		return UnixFDIndex(dec.decode("u", depth).(uint32))
@@ -213,7 +213,7 @@ func (dec *decoder) decode(s Signature, depth int) interface{} {
 		v := make([]interface{}, 0)
 		s = s[1 : len(s)-1]
 		for s != "" {
-			err, rem := validSingle(s, 0)
+			rem, err := validSingle(s, 0)
 			if err != nil {
 				panic(err)
 			}
@@ -223,7 +223,7 @@ func (dec *decoder) decode(s Signature, depth int) interface{} {
 		}
 		return v
 	default:
-		panic(SignatureError{Sig: s})
+		panic(SignatureError{Sig: string(s)})
 	}
 }
 

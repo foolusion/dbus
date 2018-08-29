@@ -42,7 +42,7 @@ func TestSig(t *testing.T) {
 	for i, v := range sigTests {
 		sig := SignatureOf(v.vs...)
 		if sig != v.sig {
-			t.Errorf("test %d: got %q, expected %q", i+1, sig.str, v.sig.str)
+			t.Errorf("test %d: got %q, expected %q", i+1, sig, v.sig)
 		}
 	}
 }

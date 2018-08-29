@@ -223,30 +223,32 @@ func (msg *Message) EncodeTo(out io.Writer, order binary.ByteOrder) error {
 	default:
 		return errors.New("dbus: invalid byte order")
 	}
-	body := newEncoder(order)
+	var body []byte
 	if len(msg.Body) != 0 {
-		body.Encode(msg.Body...)
+		var err error
+		body, err = Marshall(msg.Body...)
+		if err != nil {
+			return err
+		}
 	}
 	vs[1] = msg.Type
 	vs[2] = msg.Flags
 	vs[3] = protoVersion
-	vs[4] = uint32(body.Len())
+	vs[4] = uint32(len(body))
 	vs[5] = msg.serial
 	headers := make([]header, 0, len(msg.Headers))
 	for k, v := range msg.Headers {
 		headers = append(headers, header{byte(k), v})
 	}
 	vs[6] = headers
-	enc := newEncoder(order)
-	enc.Encode(vs[:]...)
-	enc.align(8)
-	body.WriteTo(enc)
-	if enc.Len() > 1<<27 {
-		return InvalidMessageError("message is too long")
-	}
-	if _, err := enc.WriteTo(out); err != nil {
+	h, err := Marshall(vs[:]...)
+	if err != nil {
 		return err
 	}
+	out.Write(h)
+	padding := 8 - len(h)%8
+	out.Write(make([]byte, padding))
+	out.Write(body)
 	return nil
 }
 

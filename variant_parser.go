@@ -51,7 +51,7 @@ func varMakeNode(p *varParser) (varNode, error) {
 		case tokString:
 			return varMakeStringNode(t, sig)
 		case tokBool:
-			if sig.str != "" && sig.str != "b" {
+			if sig != "" && sig != "b" {
 				return nil, varTypeError{t.val, sig}
 			}
 			b, err := strconv.ParseBool(t.val)
@@ -66,16 +66,16 @@ func varMakeNode(p *varParser) (varNode, error) {
 		case tokDictStart:
 			return varMakeDictNode(p, sig)
 		case tokType:
-			if sig.str != "" {
+			if sig != "" {
 				return nil, errors.New("unexpected type annotation")
 			}
 			if t.val[0] == '@' {
-				sig.str = t.val[1:]
+				sig = Signature(t.val[1:])
 			} else {
-				sig.str = varTypeMap[t.val]
+				sig = varTypeMap[t.val]
 			}
 		case tokByteString:
-			if sig.str != "" && sig.str != "ay" {
+			if sig != "" && sig != "ay" {
 				return nil, varTypeError{t.val, sig}
 			}
 			b, err := varParseByteString(t.val)
@@ -95,7 +95,7 @@ type varTypeError struct {
 }
 
 func (e varTypeError) Error() string {
-	return fmt.Sprintf("dbus: can't parse %q as type %q", e.val, e.sig.str)
+	return fmt.Sprintf("dbus: can't parse %q as type %q", e.val, e.sig)
 }
 
 type sigSet map[Signature]bool
@@ -126,7 +126,7 @@ func (s sigSet) Single() (Signature, bool) {
 func (s sigSet) ToArray() sigSet {
 	r := make(sigSet, len(s))
 	for k := range s {
-		r["a"+k.str] = true
+		r["a"+k] = true
 	}
 	return r
 }
@@ -160,7 +160,7 @@ func (n numNode) String() string {
 }
 
 func (n numNode) Sigs() sigSet {
-	if n.sig.str != "" {
+	if n.sig != "" {
 		return sigSet{n.sig: true}
 	}
 	if strings.ContainsAny(n.str, ".e") {
@@ -170,7 +170,7 @@ func (n numNode) Sigs() sigSet {
 }
 
 func (n numNode) Value(sig Signature) (interface{}, error) {
-	if n.sig.str != "" && n.sig != sig {
+	if n.sig != "" && n.sig != sig {
 		return nil, varTypeError{n.str, sig}
 	}
 	if n.val != nil {
@@ -180,7 +180,7 @@ func (n numNode) Value(sig Signature) (interface{}, error) {
 }
 
 func varMakeNumNode(tok varToken, sig Signature) (varNode, error) {
-	if sig.str == "" {
+	if sig == "" {
 		return numNode{str: tok.val}, nil
 	}
 	num, err := varNumAs(tok.val, sig)
@@ -193,7 +193,7 @@ func varMakeNumNode(tok varToken, sig Signature) (varNode, error) {
 func varNumAs(s string, sig Signature) (interface{}, error) {
 	isUnsigned := false
 	size := 32
-	switch sig.str {
+	switch sig {
 	case "n":
 		size = 16
 	case "i":
@@ -234,7 +234,7 @@ func varNumAs(s string, sig Signature) (interface{}, error) {
 			return nil, err
 		}
 		var v interface{} = i
-		switch sig.str {
+		switch sig {
 		case "y":
 			v = byte(i)
 		case "q":
@@ -249,7 +249,7 @@ func varNumAs(s string, sig Signature) (interface{}, error) {
 		return nil, err
 	}
 	var v interface{} = i
-	switch sig.str {
+	switch sig {
 	case "n":
 		v = int16(i)
 	case "i":
@@ -279,25 +279,25 @@ func (n stringNode) String() string {
 }
 
 func (n stringNode) Sigs() sigSet {
-	if n.sig.str != "" {
+	if n.sig != "" {
 		return sigSet{n.sig: true}
 	}
 	return stringSigSet
 }
 
 func (n stringNode) Value(sig Signature) (interface{}, error) {
-	if n.sig.str != "" && n.sig != sig {
+	if n.sig != "" && n.sig != sig {
 		return nil, varTypeError{n.str, sig}
 	}
 	if n.val != nil {
 		return n.val, nil
 	}
 	switch {
-	case sig.str == "g":
+	case sig == "g":
 		return n.str, nil
-	case sig.str == "o":
+	case sig == "o":
 		return ObjectPath(n.str), nil
-	case sig.str == "s":
+	case sig == "s":
 		return n.str, nil
 	default:
 		return nil, varTypeError{n.str, sig}
@@ -305,19 +305,19 @@ func (n stringNode) Value(sig Signature) (interface{}, error) {
 }
 
 func varMakeStringNode(tok varToken, sig Signature) (varNode, error) {
-	if sig.str != "" && sig.str != "s" && sig.str != "g" && sig.str != "o" {
-		return nil, fmt.Errorf("invalid type %q for string", sig.str)
+	if sig != "" && sig != "s" && sig != "g" && sig != "o" {
+		return nil, fmt.Errorf("invalid type %q for string", sig)
 	}
 	s, err := varParseString(tok.val)
 	if err != nil {
 		return nil, err
 	}
 	n := stringNode{str: s}
-	if sig.str == "" {
+	if sig == "" {
 		return stringNode{str: s}, nil
 	}
 	n.sig = sig
-	switch sig.str {
+	switch sig {
 	case "o":
 		n.val = ObjectPath(s)
 	case "g":
@@ -408,7 +408,7 @@ func (boolNode) Sigs() sigSet {
 }
 
 func (b boolNode) Value(sig Signature) (interface{}, error) {
-	if sig.str != "b" {
+	if sig != "b" {
 		return nil, varTypeError{b.String(), sig}
 	}
 	return bool(b), nil
@@ -426,7 +426,7 @@ func (n arrayNode) Infer() (Signature, error) {
 		if err != nil {
 			continue
 		}
-		return "a" + csig.str, nil
+		return "a" + csig, nil
 	}
 	return "", fmt.Errorf("can't infer type for %q", n.String())
 }
@@ -449,14 +449,14 @@ func (n arrayNode) Sigs() sigSet {
 func (n arrayNode) Value(sig Signature) (interface{}, error) {
 	if n.set.Empty() {
 		// no type information whatsoever, so this must be an empty slice
-		return reflect.MakeSlice(typeFor(sig.str), 0, 0).Interface(), nil
+		return reflect.MakeSlice(typeFor(sig), 0, 0).Interface(), nil
 	}
 	if !n.set[sig] {
 		return nil, varTypeError{n.String(), sig}
 	}
-	s := reflect.MakeSlice(typeFor(sig.str), len(n.children), len(n.children))
+	s := reflect.MakeSlice(typeFor(sig), len(n.children), len(n.children))
 	for i, v := range n.children {
-		rv, err := v.Value(sig.str[1:])
+		rv, err := v.Value(sig[1:])
 		if err != nil {
 			return nil, err
 		}
@@ -467,7 +467,7 @@ func (n arrayNode) Value(sig Signature) (interface{}, error) {
 
 func varMakeArrayNode(p *varParser, sig Signature) (varNode, error) {
 	var n arrayNode
-	if sig.str != "" {
+	if sig != "" {
 		n.set = sigSet{sig: true}
 	}
 	if t := p.next(); t.typ == tokArrayEnd {
@@ -538,7 +538,7 @@ func (variantNode) Sigs() sigSet {
 }
 
 func (n variantNode) Value(sig Signature) (interface{}, error) {
-	if sig.str != "v" {
+	if sig != "v" {
 		return nil, varTypeError{n.String(), sig}
 	}
 	sig, err := varInfer(n.n)
@@ -561,7 +561,7 @@ func varMakeVariantNode(p *varParser, sig Signature) (varNode, error) {
 		return nil, fmt.Errorf("unexpected %q", t.val)
 	}
 	vn := variantNode{n}
-	if sig.str != "" && sig.str != "v" {
+	if sig != "" && sig != "v" {
 		return nil, varTypeError{vn.String(), sig}
 	}
 	return variantNode{n}, nil
@@ -607,7 +607,7 @@ func (n dictNode) Sigs() sigSet {
 	r := sigSet{}
 	for k := range n.kset {
 		for v := range n.vset {
-			sig := "a{" + k.str + v.str + "}"
+			sig := "a{" + k + v + "}"
 			r[sig] = true
 		}
 	}
@@ -618,14 +618,14 @@ func (n dictNode) Value(sig Signature) (interface{}, error) {
 	set := n.Sigs()
 	if set.Empty() {
 		// no type information -> empty dict
-		return reflect.MakeMap(typeFor(sig.str)).Interface(), nil
+		return reflect.MakeMap(typeFor(sig)).Interface(), nil
 	}
 	if !set[sig] {
 		return nil, varTypeError{n.String(), sig}
 	}
-	m := reflect.MakeMap(typeFor(sig.str))
-	ksig := sig.str[2:3]
-	vsig := sig.str[3 : len(sig.str)-1]
+	m := reflect.MakeMap(typeFor(sig))
+	ksig := sig[2:3]
+	vsig := sig[3 : len(sig)-1]
 	for _, v := range n.children {
 		kv, err := v.key.Value(ksig)
 		if err != nil {
@@ -643,12 +643,12 @@ func (n dictNode) Value(sig Signature) (interface{}, error) {
 func varMakeDictNode(p *varParser, sig Signature) (varNode, error) {
 	var n dictNode
 
-	if sig.str != "" {
-		if len(sig.str) < 5 {
+	if sig != "" {
+		if len(sig) < 5 {
 			return nil, fmt.Errorf("invalid signature %q for dict type", sig)
 		}
-		ksig := string(sig.str[2])
-		vsig := sig.str[3 : len(sig.str)-1]
+		ksig := Signature(sig[2])
+		vsig := sig[3 : len(sig)-1]
 		n.kset = sigSet{ksig: true}
 		n.vset = sigSet{vsig: true}
 	}
@@ -750,7 +750,7 @@ func (b byteStringNode) Sigs() sigSet {
 }
 
 func (b byteStringNode) Value(sig Signature) (interface{}, error) {
-	if sig.str != "ay" {
+	if sig != "ay" {
 		return nil, varTypeError{b.String(), sig}
 	}
 	return []byte(b), nil

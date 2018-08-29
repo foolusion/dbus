@@ -137,7 +137,7 @@ func TestProtoMap(t *testing.T) {
 	enc := newEncoder(buf, binary.LittleEndian)
 	enc.Encode(m)
 	dec := newDecoder(buf, binary.LittleEndian)
-	vs, err := dec.Decode("a{sy"})
+	vs, err := dec.Decode("a{sy}")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ var bigMessage = &Message{
 		FieldPath:        MakeVariant(ObjectPath("/org/freedesktop/Notifications")),
 		FieldInterface:   MakeVariant("org.freedesktop.Notifications"),
 		FieldMember:      MakeVariant("Notify"),
-		FieldSignature:   MakeVariant("susssasa{svi"}),
+		FieldSignature:   MakeVariant("susssasa{svi}"),
 	},
 	Body: []interface{}{
 		"app_name",
