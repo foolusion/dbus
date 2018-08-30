@@ -1,4 +1,4 @@
-package dbus
+package dbus // import "github.com/godbus/dbus"
 
 import (
 	"errors"

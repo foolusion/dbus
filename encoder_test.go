@@ -2,413 +2,220 @@ package dbus
 
 import (
 	"bytes"
-	"encoding/binary"
+	"flag"
+	"io/ioutil"
+	"math"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
 
-func TestEncodeArrayOfMaps(t *testing.T) {
-	tests := []struct {
-		name string
-		vs   []interface{}
-	}{
-		{
-			"aligned at 8 at start of array",
-			[]interface{}{
-				"12345",
-				[]map[string]Variant{
-					{
-						"abcdefg": MakeVariant("foo"),
-						"cdef":    MakeVariant(uint32(2)),
-					},
-				},
-			},
-		},
-		{
-			"not aligned at 8 for start of array",
-			[]interface{}{
-				"1234567890",
-				[]map[string]Variant{
-					{
-						"abcdefg": MakeVariant("foo"),
-						"cdef":    MakeVariant(uint32(2)),
-					},
-				},
-			},
-		},
-	}
-	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
-		for _, tt := range tests {
-			buf := new(bytes.Buffer)
-			enc := newEncoder(buf, order)
-			enc.Encode(tt.vs...)
+var update = flag.Bool("update", false, "update golden files")
 
-			dec := newDecoder(buf, order)
-			v, err := dec.Decode(SignatureOf(tt.vs...))
-			if err != nil {
-				t.Errorf("%q: decode (%v) failed: %v", tt.name, order, err)
-				continue
-			}
-			if !reflect.DeepEqual(v, tt.vs) {
-				t.Errorf("%q: (%v) not equal: got '%v', want '%v'", tt.name, order, v, tt.vs)
-				continue
-			}
+func TestEncodeByte(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       byte
+		expected []byte
+	}{
+		{"0 byte", 0, []byte{0}},
+		{"2 byte", 2, []byte{2}},
+	}
+
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeByte(enc, reflect.ValueOf(test.in)); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		if !bytes.Equal(test.expected, enc.Bytes()) {
+			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
 		}
 	}
 }
 
-func TestEncodeMapStringInterface(t *testing.T) {
-	val := map[string]interface{}{"foo": "bar"}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
+func TestEncodeBool(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       bool
+		expected []byte
+	}{
+		{"true", true, []byte{0, 0, 0, 1}},
+		{"false", false, []byte{0, 0, 0, 0}},
 	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := map[string]interface{}{}
-	Store(v, &out)
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%v', want '%v'",
-			out, val)
-	}
-}
-
-type empty interface{}
-
-func TestEncodeMapStringNamedInterface(t *testing.T) {
-	val := map[string]empty{"foo": "bar"}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := map[string]empty{}
-	Store(v, &out)
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%v', want '%v'",
-			out, val)
-	}
-}
-
-type fooer interface {
-	Foo()
-}
-
-type fooimpl string
-
-func (fooimpl) Foo() {}
-
-func TestEncodeMapStringNonEmptyInterface(t *testing.T) {
-	val := map[string]fooer{"foo": fooimpl("bar")}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := map[string]fooer{}
-	err = Store(v, &out)
-	if err == nil {
-		t.Fatal("Shouldn't be able to convert to non empty interfaces")
-	}
-}
-
-func TestEncodeSliceInterface(t *testing.T) {
-	val := []interface{}{"foo", "bar"}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := []interface{}{}
-	Store(v, &out)
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%v', want '%v'",
-			out, val)
-	}
-}
-
-func TestEncodeSliceNamedInterface(t *testing.T) {
-	val := []empty{"foo", "bar"}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := []empty{}
-	Store(v, &out)
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%v', want '%v'",
-			out, val)
-	}
-}
-
-func TestEncodeNestedInterface(t *testing.T) {
-	val := map[string]interface{}{
-		"foo": []interface{}{"1", "2", "3", "5",
-			map[string]interface{}{
-				"bar": "baz",
-			},
-		},
-		"bar": map[string]interface{}{
-			"baz":  "quux",
-			"quux": "quuz",
-		},
-	}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := map[string]interface{}{}
-	Store(v, &out)
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%#v', want '%#v'",
-			out, val)
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeBool(enc, reflect.ValueOf(test.in)); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		if !bytes.Equal(test.expected, enc.Bytes()) {
+			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+		}
 	}
 }
 
 func TestEncodeInt(t *testing.T) {
-	val := 10
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out int
-	Store(v, &out)
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%v', want '%v'",
-			out, val)
-	}
-}
-
-func TestEncodeIntToNonCovertible(t *testing.T) {
-	val := 150
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bool
-	err = Store(v, &out)
-	if err == nil {
-		t.Logf("%t\n", out)
-		t.Fatal("Type mismatch should have occured")
-	}
-}
-
-func TestEncodeUint(t *testing.T) {
-	val := uint(10)
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out uint
-	Store(v, &out)
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%v', want '%v'",
-			out, val)
-	}
-}
-
-func TestEncodeUintToNonCovertible(t *testing.T) {
-	val := uint(10)
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bool
-	err = Store(v, &out)
-	if err == nil {
-		t.Fatal("Type mismatch should have occured")
-	}
-}
-
-type boolean bool
-
-func TestEncodeOfAssignableType(t *testing.T) {
-	val := boolean(true)
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(val))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out boolean
-	err = Store(v, &out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(out, val) {
-		t.Errorf("not equal: got '%v', want '%v'",
-			out, val)
-	}
-}
-
-func TestEncodeVariant(t *testing.T) {
-	var res map[ObjectPath]map[string]map[string]Variant
-	var src = map[ObjectPath]map[string]map[string]Variant{
-		ObjectPath("/foo/bar"): {
-			"foo": {
-				"bar": MakeVariant(10),
-				"baz": MakeVariant("20"),
-			},
+	tests := []struct {
+		name     string
+		in       reflect.Value
+		expected []byte
+	}{
+		{"uint8 123", reflect.ValueOf(uint8(123)), []byte{123}},
+		{"int16 -23", reflect.ValueOf(int16(-23)), []byte{0xff, 0xe9}},
+		{"uint16", reflect.ValueOf(uint16(0xffe9)), []byte{0xff, 0xe9}},
+		{"uint32", reflect.ValueOf(uint32(0xdeadbeef)), []byte{0xde, 0xad, 0xbe, 0xef}},
+		{"int32", reflect.ValueOf(int32(-1091581186)), []byte{0xbe, 0xef, 0xca, 0xfe}},
+		{
+			"int64",
+			reflect.ValueOf(int64(-2401053089206453570)),
+			[]byte{0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe},
+		},
+		{
+			"uint64",
+			reflect.ValueOf(uint64(0x01badcabfaceb00c)),
+			[]byte{0x01, 0xba, 0xdc, 0xab, 0xfa, 0xce, 0xb0, 0x0c},
 		},
 	}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(src)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeInt(enc, test.in); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		if !bytes.Equal(test.expected, enc.Bytes()) {
+			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+		}
 	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(src))
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = Store(v, &res)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = res[ObjectPath("/foo/bar")]["foo"]["baz"].Value().(string)
 }
 
-func TestEncodeVariantToList(t *testing.T) {
-	var res map[string]Variant
-	var src = map[string]interface{}{
-		"foo": []interface{}{"a", "b", "c"},
+func TestEncodeFloat(t *testing.T) {
+	tests := []struct {
+		name string
+		in   reflect.Value
+	}{
+		{"zero", reflect.ValueOf(float64(0))},
+		{"point-5", reflect.ValueOf(float64(0.5))},
+		{"max-float", reflect.ValueOf(float64(math.MaxFloat64))},
+		{"smallest-nonzero", reflect.ValueOf(float64(math.SmallestNonzeroFloat64))},
 	}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(src)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeFloat(enc, test.in); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		golden := filepath.Join("testdata", test.name+".golden")
+		if *update {
+			ioutil.WriteFile(golden, enc.Bytes(), 0644)
+		}
+		expected, err := ioutil.ReadFile(golden)
+		if err != nil {
+			t.Errorf("could not read test file %s: %v", golden, err)
+		}
+		if !bytes.Equal(expected, enc.Bytes()) {
+			t.Errorf("%s: got %s, wanted %s", test.name, enc.Bytes(), expected)
+		}
 	}
-
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(src))
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = Store(v, &res)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = res["foo"].Value().([]Variant)
 }
 
-func TestEncodeVariantToUint64(t *testing.T) {
-	var res map[string]Variant
-	var src = map[string]interface{}{
-		"foo": uint64(10),
+func TestEncodeSignature(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       reflect.Value
+		expected []byte
+	}{
+		{"empty", reflect.ValueOf(""), []byte{0, 0}},
+		{"yyy", reflect.ValueOf("yyy"), []byte{3, 'y', 'y', 'y', 0}},
 	}
-	buf := new(bytes.Buffer)
-	order := binary.LittleEndian
-	enc := newEncoder(buf, binary.LittleEndian)
-	err := enc.Encode(src)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeSignature(enc, test.in); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		if !bytes.Equal(test.expected, enc.Bytes()) {
+			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+		}
 	}
+}
 
-	dec := newDecoder(buf, order)
-	v, err := dec.Decode(SignatureOf(src))
-	if err != nil {
-		t.Fatal(err)
+func TestEncodeString(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       reflect.Value
+		expected []byte
+	}{
+		{"empty", reflect.ValueOf(""), []byte{0, 0, 0, 0, 0}},
+		{"hello, world!", reflect.ValueOf("hello, world!"), []byte{0, 0, 0, 13, 'h', 'e', 'l', 'l', 'o', ',', ' ', 'w', 'o', 'r', 'l', 'd', '!', 0}},
 	}
-	err = Store(v, &res)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeString(enc, test.in); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		if !bytes.Equal(test.expected, enc.Bytes()) {
+			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+		}
 	}
-	_ = res["foo"].Value().(uint64)
+}
+
+func TestEncodeSlice(t *testing.T) {
+	tests := []struct {
+		name string
+		in   reflect.Value
+	}{
+		{"empty-slice-of-int", reflect.ValueOf([]int{})},
+		{"slice-of-string", reflect.ValueOf([]string{"hello,", "world!"})},
+		{
+			"slice-of-slice-of-struct-of-float64-and float64",
+			reflect.ValueOf([][]struct {
+				x float64
+				y float64
+			}{
+				{
+					{1.0, 2.0},
+					{3.1, 4.1},
+				},
+				{
+					{5.2, 6.2},
+					{7.3, 8.3},
+					{9.4, 10.4},
+				},
+			}),
+		},
+	}
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeSlice(enc, test.in); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		golden := filepath.Join("testdata", test.name+".golden")
+		if *update {
+			ioutil.WriteFile(golden, enc.Bytes(), 0644)
+		}
+		expected, err := ioutil.ReadFile(golden)
+		if err != nil {
+			t.Errorf("could not read test file %s: %v", golden, err)
+		}
+		if !bytes.Equal(expected, enc.Bytes()) {
+			t.Errorf("%s: got %v, wanted %v", test.name, enc.Bytes(), expected)
+		}
+	}
 }

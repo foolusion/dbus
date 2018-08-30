@@ -12,8 +12,11 @@ import (
 // Marshall encodes the values into dbus wire format.
 func Marshall(vs ...interface{}) ([]byte, error) {
 	e := newEncoder()
-	if err := e.encode(vs...); err != nil {
-		return nil, err
+	for _, v := range vs {
+		e.encode(reflect.ValueOf(v))
+		if e.err != nil {
+			return nil, e.err
+		}
 	}
 	buf := append([]byte(nil), e.Bytes()...)
 	encoderPool.Put(e)
@@ -25,6 +28,33 @@ var encoderPool sync.Pool
 // An encoder encodes values to the D-Bus wire format.
 type encoder struct {
 	bytes.Buffer
+	offset int
+	err    error
+}
+
+func (enc *encoder) totalLen() int {
+	return enc.Len() + enc.offset
+}
+
+func (enc *encoder) Write(b []byte) {
+	if enc.err != nil {
+		return
+	}
+	_, enc.err = enc.Buffer.Write(b)
+}
+
+func (enc *encoder) WriteString(s string) {
+	if enc.err != nil {
+		return
+	}
+	_, enc.err = enc.Buffer.WriteString(s)
+}
+
+func (enc *encoder) WriteByte(b byte) {
+	if enc.err != nil {
+		return
+	}
+	enc.err = enc.Buffer.WriteByte(b)
 }
 
 // NewEncoder returns a new encoder that writes to out in the given
@@ -41,10 +71,11 @@ func newEncoderAtOffset(offset int) *encoder {
 	if v := encoderPool.Get(); v != nil {
 		e = v.(*encoder)
 		e.Buffer.Reset()
+		e.err = nil
 	} else {
 		e = new(encoder)
 	}
-	e.Write(make([]byte, offset))
+	e.offset = offset
 	return e
 }
 
@@ -52,7 +83,10 @@ func newEncoderAtOffset(offset int) *encoder {
 // alignment. If it is already aligned then nothing happens. panic on
 // write error.
 func (enc *encoder) align(n int) {
-	curOffset := enc.Len() % n
+	if enc.err != nil {
+		return
+	}
+	curOffset := enc.totalLen() % n
 	var padding int
 	if curOffset != 0 {
 		padding = n - curOffset
@@ -60,43 +94,24 @@ func (enc *encoder) align(n int) {
 	if padding == 0 {
 		return
 	}
-	_, err := enc.Write(make([]byte, padding))
-	if err != nil {
-		panic(err)
-	}
+	enc.Write(make([]byte, padding))
 }
 
-// pad returns the number of bytes of padding, based on current
-// position and additional offset.  and alignment.
-func (enc *encoder) padding(offset, algn int) int {
-	abs := enc.Len() + offset
-	if abs%algn != 0 {
-		newabs := (abs + algn - 1) & ^(algn - 1)
-		return newabs - abs
-	}
-	return 0
-}
-
-// Calls binary.Write(enc.out, enc.order, v) and panics on write errors.
-func (enc *encoder) binwrite(v interface{}) {
-	if err := binary.Write(enc, binary.BigEndian, v); err != nil {
-		panic(err)
-	}
-}
-
-// Encode encodes the given values to the underyling reader. All
+// Encode encodes the given values to the underlying reader. All
 // written values are aligned properly as required by the D-Bus spec.
-func (enc *encoder) encode(vs ...interface{}) (err error) {
-	defer func() {
-		err, _ = recover().(error)
-	}()
-	for _, v := range vs {
-		val := reflect.ValueOf(v)
-		enc.align(alignment(val.Type()))
-		f := getEncoder(val.Type(), 0)
-		f(enc, val)
+func (enc *encoder) encode(v reflect.Value) {
+	if enc.err != nil {
+		return
 	}
-	return nil
+	enc.align(alignment(v.Type()))
+	f := getEncoder(v.Type(), 0)
+	err := f(enc, v)
+	if enc.err != nil {
+		return
+	} else if err != nil {
+		enc.err = err
+		return
+	}
 }
 
 type encodeFn func(*encoder, reflect.Value) error
@@ -130,17 +145,15 @@ func getEncoder(t reflect.Type, depth int) encodeFn {
 
 func encodeByte(enc *encoder, v reflect.Value) error {
 	b := byte(v.Uint())
-	if err := enc.WriteByte(b); err != nil {
-		return err
-	}
+	enc.WriteByte(b)
 	return nil
 }
 
 func encodeBool(enc *encoder, v reflect.Value) error {
 	if v.Bool() {
-		return binary.Write(enc, binary.BigEndian, uint32(1))
+		return binary.Write(&enc.Buffer, binary.BigEndian, uint32(1))
 	}
-	return binary.Write(enc, binary.BigEndian, uint32(0))
+	return binary.Write(&enc.Buffer, binary.BigEndian, uint32(0))
 }
 
 func encodeInt(enc *encoder, v reflect.Value) error {
@@ -157,16 +170,16 @@ func encodeInt(enc *encoder, v reflect.Value) error {
 	}
 	binary.BigEndian.PutUint64(buf, u)
 	sizeBytes := b >> 3
-	_, err := enc.Write(buf[8-sizeBytes:])
-	return err
+	enc.Write(buf[8-sizeBytes:])
+	return nil
 }
 
 func encodeFloat(enc *encoder, v reflect.Value) error {
 	bits := math.Float64bits(v.Float())
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, bits)
-	_, err := enc.Write(buf)
-	return err
+	enc.Write(buf)
+	return nil
 }
 
 func getStringEncoder(t reflect.Type) encodeFn {
@@ -183,34 +196,24 @@ func encodeSignature(enc *encoder, v reflect.Value) error {
 }
 
 func encodeString(enc *encoder, v reflect.Value) error {
-	if err := enc.encode(uint32(v.Len())); err != nil {
-		return err
-	}
+	enc.encode(reflect.ValueOf(uint32(v.Len())))
 	return encodeStringData(enc, v)
 }
 
 func encodeStringData(enc *encoder, v reflect.Value) error {
-	if _, err := enc.WriteString(v.String()); err != nil {
-		return err
-	}
-	if err := enc.WriteByte(0); err != nil {
-		return err
-	}
+	enc.WriteString(v.String())
+	enc.WriteByte(0)
 	return nil
 }
 
 func encodeSlice(enc *encoder, v reflect.Value) error {
-	var temp encoder
-	f := getEncoder(v.Type().Elem(), 0)
+	temp := newEncoderAtOffset(enc.totalLen() + 4)
 	for i := 0; i < v.Len(); i++ {
-		f(enc, v.Index(i))
+		temp.encode(v.Index(i))
 	}
-	enc.encode(uint32(temp.Len()))
-	enc.align(alignment(v.Type().Elem()))
-	_, err := enc.Write(temp.Bytes())
-	if err != nil {
-		return err
-	}
+	enc.encode(reflect.ValueOf(uint32(temp.Len())))
+	enc.Write(temp.Bytes())
+	encoderPool.Put(temp)
 	return nil
 }
 
@@ -226,44 +229,29 @@ func getStructEncoder(t reflect.Type) encodeFn {
 
 func encodeStruct(enc *encoder, v reflect.Value) error {
 	for i := 0; i < v.NumField(); i++ {
-		if err := enc.encode(v.Field(i)); err != nil {
-			return err
-		}
+		enc.encode(v.Field(i))
 	}
 	return nil
 }
 
-// FIXME: implement this
 func encodeVariant(enc *encoder, v reflect.Value) error {
 	variant := v.Interface().(Variant)
-	enc.encode(variant.sig)
-	enc.encode(variant.value)
+	enc.encode(reflect.ValueOf(variant.sig))
+	enc.encode(reflect.ValueOf(variant.value))
 	return nil
 }
 
-// FIXME: implement this.
 func encodeMap(enc *encoder, v reflect.Value) error {
-	return errors.New("not implemented")
-	/*
-		if !isKeyType(v.Type().Key()) {
-			panic(InvalidTypeError{v.Type()})
-		}
-		keys := v.MapKeys()
-		// Lookahead offset: 4 bytes for uint32 length (with alignment),
-		// plus 8-byte alignment
-		n := enc.padding(0, 4) + 4
-		offset := enc.Len() + n + enc.padding(n, 8)
-
-		bufenc := newEncoderAtOffset(offset)
-		for _, k := range keys {
-			bufenc.align(8)
-			bufenc.encode(k, depth+2)
-			bufenc.encode(v.MapIndex(k), depth+2)
-		}
-		enc.encode(reflect.ValueOf(uint32(bufenc.Len())), depth)
-		enc.align(8)
-		if _, err := bufenc.WriteTo(enc); err != nil {
-			panic(err)
-		}
-	*/
+	tempEnc := newEncoder()
+	for _, k := range v.MapKeys() {
+		kv := v.MapIndex(k)
+		tempEnc.align(8)
+		tempEnc.encode(k)
+		tempEnc.encode(kv)
+	}
+	enc.encode(reflect.ValueOf(uint32(tempEnc.Len())))
+	enc.align(8)
+	enc.Write(tempEnc.Bytes())
+	encoderPool.Put(tempEnc)
+	return nil
 }
