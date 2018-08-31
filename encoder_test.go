@@ -31,7 +31,7 @@ func TestEncodeByte(t *testing.T) {
 			t.Errorf("%s: encoder err: %s", test.name, enc.err)
 		}
 		if !bytes.Equal(test.expected, enc.Bytes()) {
-			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+			t.Errorf("%s: got % x want % x", test.name, enc.Bytes(), test.expected)
 		}
 	}
 }
@@ -54,7 +54,7 @@ func TestEncodeBool(t *testing.T) {
 			t.Errorf("%s: encoder err: %s", test.name, enc.err)
 		}
 		if !bytes.Equal(test.expected, enc.Bytes()) {
-			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+			t.Errorf("%s: got % x want % x", test.name, enc.Bytes(), test.expected)
 		}
 	}
 }
@@ -90,7 +90,7 @@ func TestEncodeInt(t *testing.T) {
 			t.Errorf("%s: encoder err: %s", test.name, enc.err)
 		}
 		if !bytes.Equal(test.expected, enc.Bytes()) {
-			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+			t.Errorf("%s: got % x want % x", test.name, enc.Bytes(), test.expected)
 		}
 	}
 }
@@ -122,7 +122,7 @@ func TestEncodeFloat(t *testing.T) {
 			t.Errorf("could not read test file %s: %v", golden, err)
 		}
 		if !bytes.Equal(expected, enc.Bytes()) {
-			t.Errorf("%s: got %s, wanted %s", test.name, enc.Bytes(), expected)
+			t.Errorf("%s: got % x, wanted % x", test.name, enc.Bytes(), expected)
 		}
 	}
 }
@@ -145,7 +145,7 @@ func TestEncodeSignature(t *testing.T) {
 			t.Errorf("%s: encoder err: %s", test.name, enc.err)
 		}
 		if !bytes.Equal(test.expected, enc.Bytes()) {
-			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+			t.Errorf("%s: got % x want % x", test.name, enc.Bytes(), test.expected)
 		}
 	}
 }
@@ -168,7 +168,7 @@ func TestEncodeString(t *testing.T) {
 			t.Errorf("%s: encoder err: %s", test.name, enc.err)
 		}
 		if !bytes.Equal(test.expected, enc.Bytes()) {
-			t.Errorf("%s: got %v want %v", test.name, enc.Bytes(), test.expected)
+			t.Errorf("%s: got % x want % x", test.name, enc.Bytes(), test.expected)
 		}
 	}
 }
@@ -215,7 +215,61 @@ func TestEncodeSlice(t *testing.T) {
 			t.Errorf("could not read test file %s: %v", golden, err)
 		}
 		if !bytes.Equal(expected, enc.Bytes()) {
-			t.Errorf("%s: got %v, wanted %v", test.name, enc.Bytes(), expected)
+			t.Errorf("%s: got % x, wanted % x", test.name, enc.Bytes(), expected)
+		}
+	}
+}
+
+func TestEncodeStruct(t *testing.T) {
+	tests := []struct {
+		name string
+		in   reflect.Value
+	}{
+		{"empty-struct", reflect.ValueOf(struct{}{})},
+		{"simple-struct", reflect.ValueOf(struct {
+			A int
+			B string
+			C float64
+		}{1, "hello", 1.0})},
+		{
+			"nested-struct",
+			reflect.ValueOf(struct {
+				A struct{ B, C int }
+				D struct{ E, F float64 }
+			}{
+				struct{ B, C int }{1, 2},
+				struct{ E, F float64 }{1.0, 2.0},
+			}),
+		},
+		{
+			"struct-with-array",
+			reflect.ValueOf(struct {
+				A struct{ B, C int }
+				D []string
+			}{
+				struct{ B, C int }{1, 2},
+				[]string{"hello", "world", "nice", "to", "meet", "you"},
+			}),
+		},
+	}
+	for _, test := range tests {
+		enc := newEncoder()
+		if err := encodeStruct(enc, test.in); err != nil {
+			t.Errorf("%s: %s", test.name, err)
+		}
+		if enc.err != nil {
+			t.Errorf("%s: encoder err: %s", test.name, enc.err)
+		}
+		golden := filepath.Join("testdata", test.name+".golden")
+		if *update {
+			ioutil.WriteFile(golden, enc.Bytes(), 0644)
+		}
+		expected, err := ioutil.ReadFile(golden)
+		if err != nil {
+			t.Errorf("%s: could not read test file %s: %v", test.name, golden, err)
+		}
+		if !bytes.Equal(expected, enc.Bytes()) {
+			t.Errorf("%s: got % x, want % x", test.name, enc.Bytes(), expected)
 		}
 	}
 }
