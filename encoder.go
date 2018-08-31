@@ -105,16 +105,10 @@ func (enc *encoder) encode(v reflect.Value) {
 	}
 	enc.align(alignment(v.Type()))
 	f := getEncoder(v.Type(), 0)
-	err := f(enc, v)
-	if enc.err != nil {
-		return
-	} else if err != nil {
-		enc.err = err
-		return
-	}
+	f(enc, v)
 }
 
-type encodeFn func(*encoder, reflect.Value) error
+type encodeFn func(*encoder, reflect.Value)
 
 // encode encodes the given value to the writer and panics on
 // error. depth holds the depth of the container nesting.
@@ -140,23 +134,23 @@ func getEncoder(t reflect.Type, depth int) encodeFn {
 	case reflect.Map:
 		return encodeMap
 	}
-	return func(*encoder, reflect.Value) error { return errors.New("not implemented") }
+	return func(enc *encoder, _ reflect.Value) { enc.err = errors.New("not implemented") }
 }
 
-func encodeByte(enc *encoder, v reflect.Value) error {
+func encodeByte(enc *encoder, v reflect.Value) {
 	b := byte(v.Uint())
 	enc.WriteByte(b)
-	return nil
 }
 
-func encodeBool(enc *encoder, v reflect.Value) error {
+func encodeBool(enc *encoder, v reflect.Value) {
 	if v.Bool() {
-		return binary.Write(&enc.Buffer, binary.BigEndian, uint32(1))
+		encodeInt(enc, reflect.ValueOf(uint32(1)))
+		return
 	}
-	return binary.Write(&enc.Buffer, binary.BigEndian, uint32(0))
+	encodeInt(enc, reflect.ValueOf(uint32(0)))
 }
 
-func encodeInt(enc *encoder, v reflect.Value) error {
+func encodeInt(enc *encoder, v reflect.Value) {
 	buf := make([]byte, 8)
 	var u uint64
 	var b int
@@ -171,15 +165,13 @@ func encodeInt(enc *encoder, v reflect.Value) error {
 	binary.BigEndian.PutUint64(buf, u)
 	sizeBytes := b >> 3
 	enc.Write(buf[8-sizeBytes:])
-	return nil
 }
 
-func encodeFloat(enc *encoder, v reflect.Value) error {
+func encodeFloat(enc *encoder, v reflect.Value) {
 	bits := math.Float64bits(v.Float())
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, bits)
 	enc.Write(buf)
-	return nil
 }
 
 func getStringEncoder(t reflect.Type) encodeFn {
@@ -190,23 +182,22 @@ func getStringEncoder(t reflect.Type) encodeFn {
 	return encodeString
 }
 
-func encodeSignature(enc *encoder, v reflect.Value) error {
+func encodeSignature(enc *encoder, v reflect.Value) {
 	enc.WriteByte(byte(v.Len()))
-	return encodeStringData(enc, v)
+	encodeStringData(enc, v)
 }
 
-func encodeString(enc *encoder, v reflect.Value) error {
+func encodeString(enc *encoder, v reflect.Value) {
 	enc.encode(reflect.ValueOf(uint32(v.Len())))
-	return encodeStringData(enc, v)
+	encodeStringData(enc, v)
 }
 
-func encodeStringData(enc *encoder, v reflect.Value) error {
+func encodeStringData(enc *encoder, v reflect.Value) {
 	enc.WriteString(v.String())
 	enc.WriteByte(0)
-	return nil
 }
 
-func encodeSlice(enc *encoder, v reflect.Value) error {
+func encodeSlice(enc *encoder, v reflect.Value) {
 	temp := newEncoderAtOffset(enc.totalLen() + 4)
 	for i := 0; i < v.Len(); i++ {
 		temp.encode(v.Index(i))
@@ -214,7 +205,6 @@ func encodeSlice(enc *encoder, v reflect.Value) error {
 	enc.encode(reflect.ValueOf(uint32(temp.Len())))
 	enc.Write(temp.Bytes())
 	encoderPool.Put(temp)
-	return nil
 }
 
 func getStructEncoder(t reflect.Type) encodeFn {
@@ -227,21 +217,19 @@ func getStructEncoder(t reflect.Type) encodeFn {
 	return encodeStruct
 }
 
-func encodeStruct(enc *encoder, v reflect.Value) error {
+func encodeStruct(enc *encoder, v reflect.Value) {
 	for i := 0; i < v.NumField(); i++ {
 		enc.encode(v.Field(i))
 	}
-	return nil
 }
 
-func encodeVariant(enc *encoder, v reflect.Value) error {
+func encodeVariant(enc *encoder, v reflect.Value) {
 	variant := v.Interface().(Variant)
 	enc.encode(reflect.ValueOf(variant.sig))
 	enc.encode(reflect.ValueOf(variant.value))
-	return nil
 }
 
-func encodeMap(enc *encoder, v reflect.Value) error {
+func encodeMap(enc *encoder, v reflect.Value) {
 	tempEnc := newEncoder()
 	for _, k := range v.MapKeys() {
 		kv := v.MapIndex(k)
@@ -253,5 +241,4 @@ func encodeMap(enc *encoder, v reflect.Value) error {
 	enc.align(8)
 	enc.Write(tempEnc.Bytes())
 	encoderPool.Put(tempEnc)
-	return nil
 }
